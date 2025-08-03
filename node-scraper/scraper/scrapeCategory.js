@@ -13,7 +13,7 @@ module.exports = async function scrapeCategory(
      const page = await browser.newPage();
 
       // ✅ Set geolocation permission for the page
-      await page.setGeolocation({ latitude: 0, longitude: 0 }); // dummy location
+  await page.setGeolocation({ latitude: 0, longitude: 0 }); // dummy location
   await page.goto(url, { waitUntil: "networkidle2", timeout: 0 });
 
 
@@ -52,7 +52,7 @@ module.exports = async function scrapeCategory(
   for (const [index, link] of eventLinks.entries()) {
 
     const detailPage = await browser.newPage();
-
+    console.log(`"${link}"`);
     try {
       await detailPage.goto(link, { waitUntil: "networkidle2", timeout: 0 });
       await delay(5000);
@@ -60,8 +60,17 @@ module.exports = async function scrapeCategory(
       const data = await detailPage.evaluate(
         (loc, categoryTab) => {
           const title = document.querySelector("h1")?.innerText || "Untitled";
-
-            const eventDate = document.querySelector('[data-ref="edp_event_datestring_desktop"]')?.textContent.trim() || "Date not found";
+          const eventDateAndTime = document.querySelector('[data-ref="edp_event_datestring_desktop"]')?.textContent.trim() || "Date not found";
+          const eventDate;
+          const eventTime;
+          if (eventDateAndTime !== "Date not found") {
+            const parts = eventDateAndTime.split("|").map(part => part.trim());
+            if (!parts.[0] === null) {
+              eventDate = parts[0];
+            }
+            if(!parts.[1] === null){
+              eventTime = parts[1];
+            }
 
           let image = document.querySelector('[data-ref="edp_event_banner_image"]')?.src || "";
 
@@ -73,7 +82,8 @@ module.exports = async function scrapeCategory(
             eventDate,
             image,
             location: loc,
-            price
+            price,
+            eventLink: link
           };
         },
         location,
