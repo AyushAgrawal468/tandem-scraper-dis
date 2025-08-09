@@ -5,10 +5,10 @@ const scrapeCategory = require('./scrapeCategory');
 
 puppeteer.use(StealthPlugin());
 
-const LOCATIONS = ['mumbai'];
+const LOCATIONS = ['mumbai','new-delhi','bangalore','hyderabad','chennai','pune','kolkata','ahmedabad','jaipur','gurgaon','noida','chandigarh','indore'];
 const CATEGORY_TABS = ['Activities','Events'];
-const SUB_CATEGORY_EVENT_LIST = ['music', 'comedy', 'nightlife'];
-const SUB_CATEGORY_ACTIVITY_LIST = ['theme-parks', 'water-parks', 'adventure'];
+const SUB_CATEGORY_EVENT_LIST = ['music', 'comedy', 'nightlife','performances','sports','food-drinks','fests-fairs','social-mixers','screenings','fitness','conferences','expos','art-exhibitions'];
+const SUB_CATEGORY_ACTIVITY_LIST = ['theme-parks', 'water-parks', 'adventure','game-zones','kids-play','workshops','games-quizzes','art-craft','fitness','pets','esports','museums'];
 
 const CATEGORY_SUBCATEGORIES = {
     Events: SUB_CATEGORY_EVENT_LIST,

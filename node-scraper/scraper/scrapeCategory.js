@@ -52,34 +52,42 @@ module.exports = async function scrapeCategory(
   for (const [index, link] of eventLinks.entries()) {
 
     const detailPage = await browser.newPage();
+     detailPage.on("console", msg => {
+          console.log(`📜 [BROWSER LOG]: ${msg.text()}`);
+        });
     console.log(`"${link}"`);
     try {
       await detailPage.goto(link, { waitUntil: "networkidle2", timeout: 0 });
       await delay(5000);
 
       const data = await detailPage.evaluate(
-        (loc, categoryTab) => {
+        (loc, categoryTab,link) => {
           const title = document.querySelector("h1")?.innerText || "Untitled";
-          const eventDateAndTime = document.querySelector('[data-ref="edp_event_datestring_desktop"]')?.textContent.trim() || "Date not found";
-          const eventDate;
-          const eventTime;
+          const eventDateAndTime = document.querySelector('[data-ref="edp_event_datestring_desktop"]')?.textContent?.trim() || "Date not found";
+
+          let eventDate = "TBD";
+          let eventTime = "TBD";
+          console.log("Raw event date & time text:", `"${eventDateAndTime}"`);
           if (eventDateAndTime !== "Date not found") {
             const parts = eventDateAndTime.split("|").map(part => part.trim());
-            if (!parts.[0] === null) {
+            console.log("Split parts:", parts);
+            if (parts.length > 0 && parts[0]) {
               eventDate = parts[0];
             }
-            if(!parts.[1] === null){
+            if (parts.length > 1 && parts[1]) {
               eventTime = parts[1];
             }
-
+            console.log(`Parsed Event Date: "${eventDate}"`);
+              console.log(`Parsed Event Time: "${eventTime}"`);
+          }
           let image = document.querySelector('[data-ref="edp_event_banner_image"]')?.src || "";
-
           let price = document.querySelector('[data-ref="edp_price_string_desktop"]')?.textContent.trim() || "Free";
 
           return {
             title,
             category: categoryTab,
             eventDate,
+            eventTime,
             image,
             location: loc,
             price,
@@ -87,19 +95,14 @@ module.exports = async function scrapeCategory(
           };
         },
         location,
-        categoryTab
+        categoryTab,
+        link
       );
       eventList.push(data);
     } catch (e) {
       console.error(`❌ Error scraping ${link}: ${e.message}`);
     } finally {
       await detailPage.close();
-    }
-
-    // Optional: Stop after N events (for testing)
-    if (eventList.length >= 10) {
-      console.log("🧪 Collected 10 events — stopping early for test.");
-      break;
     }
   }
 
