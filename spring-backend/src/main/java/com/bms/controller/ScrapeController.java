@@ -75,6 +75,21 @@ public class ScrapeController {
                     System.out.println("error in event date"+ex);
                     event.setEventDate(null);
                 }
+                if(raw.get("eventTime") != null) {
+                    event.setEventTime((String) raw.get("eventTime"));
+                } else {
+                    event.setEventTime(null); // Handle missing time
+                }
+                if (raw.get("eventLink") != null) {
+                    event.setSourceLink((String) raw.get("eventLink"));
+                } else {
+                    event.setSourceLink(null); // Handle missing link
+                }
+                if( raw.get("price") != null) {
+                    event.setPrice((String) raw.get("price"));
+                } else {
+                    event.setPrice(null); // Handle missing price
+                }
                 event.setScrapedAt(LocalDateTime.now());
 
                 eventList.add(event);

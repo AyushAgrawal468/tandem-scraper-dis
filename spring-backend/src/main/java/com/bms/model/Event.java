@@ -23,6 +23,11 @@ public class Event {
     @Column(name = "event_date")
     private String eventDate;
 
+    @Column(name = "event_time")
+    private String eventTime;
+
     @Column(name = "scraped_at")
     private LocalDateTime scrapedAt;
+    private String sourceLink;
+    private String price;
 }
