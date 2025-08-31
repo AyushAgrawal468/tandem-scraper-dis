@@ -11,12 +11,10 @@ import org.springframework.web.bind.annotation.*;
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 @RestController
@@ -66,7 +64,6 @@ public class ScrapeController {
                 String dateStr = (String) raw.get("eventDate");
                 try {
                     if (dateStr != null && !"TBD".equalsIgnoreCase(dateStr)) {
-
                         event.setEventDate(dateStr); // Valid date string
                     } else {
                         event.setEventDate(null); // or set default LocalDate.now() if needed
@@ -91,6 +88,41 @@ public class ScrapeController {
                     event.setPrice(null); // Handle missing price
                 }
                 event.setScrapedAt(LocalDateTime.now());
+                if(raw.get("description") != null) {
+                    event.setDescription((List<String>) raw.get("description"));
+                } else {
+                    event.setDescription(null); // Handle missing description
+                }
+                if(raw.get("tags") != null) {
+                    // Cast to List<String> since tags come as an array from Node.js
+                    event.setTags((List<String>) raw.get("tags"));
+                } else {
+                    event.setTags(null); // Handle missing tags
+                }
+                if(raw.get("genres") != null) {
+                    // Cast to List<String> since genres come as an array from Node.js
+                    event.setGenres((List<String>) raw.get("genres"));
+                } else {
+                    event.setGenres(null); // Handle missing genres
+                }
+
+                // MongoDB advantage: Store ALL additional data flexibly
+                // Remove the already processed fields and store everything else
+                Map<String, Object> additionalData = new HashMap<>(raw);
+                additionalData.remove("title");
+                additionalData.remove("category");
+                additionalData.remove("location");
+                additionalData.remove("image");
+                additionalData.remove("eventDate");
+                additionalData.remove("eventTime");
+                additionalData.remove("eventLink");
+                additionalData.remove("price");
+                additionalData.remove("description");
+                additionalData.remove("tags");
+                additionalData.remove("genres");
+
+                // Store any additional scraped data that doesn't fit the standard fields
+                event.setAdditionalData(additionalData);
 
                 eventList.add(event);
             }
@@ -103,5 +135,56 @@ public class ScrapeController {
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body("❌ Error: " + e.getMessage());
         }
+    }
+
+    // New MongoDB-specific endpoints
+    @GetMapping("/events")
+    public ResponseEntity<List<Event>> getAllEvents() {
+        List<Event> events = eventRepo.findAll();
+        return ResponseEntity.ok(events);
+    }
+
+    @GetMapping("/events/category/{category}")
+    public ResponseEntity<List<Event>> getEventsByCategory(@PathVariable String category) {
+        List<Event> events = eventRepo.findByCategory(category);
+        return ResponseEntity.ok(events);
+    }
+
+    @GetMapping("/events/location/{location}")
+    public ResponseEntity<List<Event>> getEventsByLocation(@PathVariable String location) {
+        List<Event> events = eventRepo.findByLocation(location);
+        return ResponseEntity.ok(events);
+    }
+
+    @GetMapping("/events/search")
+    public ResponseEntity<List<Event>> searchEvents(@RequestParam String title) {
+        List<Event> events = eventRepo.findByTitleContainingIgnoreCase(title);
+        return ResponseEntity.ok(events);
+    }
+
+    @GetMapping("/events/recent/{hours}")
+    public ResponseEntity<List<Event>> getRecentEvents(@PathVariable int hours) {
+        LocalDateTime since = LocalDateTime.now().minusHours(hours);
+        List<Event> events = eventRepo.findByScrapedAtAfter(since);
+        return ResponseEntity.ok(events);
+    }
+
+    @PostMapping("/events/flexible")
+    public ResponseEntity<Event> saveFlexibleEvent(@RequestBody Map<String, Object> eventData) {
+        Event event = Event.builder()
+                .title((String) eventData.get("title"))
+                .category((String) eventData.get("category"))
+                .location((String) eventData.get("location"))
+                .imageUrl((String) eventData.get("imageUrl"))
+                .eventDate((String) eventData.get("eventDate"))
+                .eventTime((String) eventData.get("eventTime"))
+                .price((String) eventData.get("price"))
+                .sourceLink((String) eventData.get("sourceLink"))
+                .scrapedAt(LocalDateTime.now())
+                .additionalData(eventData) // Store the entire payload
+                .build();
+
+        Event savedEvent = eventRepo.save(event);
+        return ResponseEntity.ok(savedEvent);
     }
 }

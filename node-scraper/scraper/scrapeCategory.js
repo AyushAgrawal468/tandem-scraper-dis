@@ -52,36 +52,38 @@ module.exports = async function scrapeCategory(
   for (const [index, link] of eventLinks.entries()) {
 
     const detailPage = await browser.newPage();
-     detailPage.on("console", msg => {
-          console.log(`📜 [BROWSER LOG]: ${msg.text()}`);
-        });
+    //  detailPage.on("console", msg => {
+    //       console.log(`📜 [BROWSER LOG]: ${msg.text()}`);
+    //     });
     console.log(`"${link}"`);
     try {
       await detailPage.goto(link, { waitUntil: "networkidle2", timeout: 0 });
       await delay(5000);
 
       const data = await detailPage.evaluate(
-        (loc, categoryTab,link) => {
+        async (loc, categoryTab,link) => {
           const title = document.querySelector("h1")?.innerText || "Untitled";
           const eventDateAndTime = document.querySelector('[data-ref="edp_event_datestring_desktop"]')?.textContent?.trim() || "Date not found";
 
           let eventDate = "TBD";
           let eventTime = "TBD";
-          console.log("Raw event date & time text:", `"${eventDateAndTime}"`);
           if (eventDateAndTime !== "Date not found") {
             const parts = eventDateAndTime.split("|").map(part => part.trim());
-            console.log("Split parts:", parts);
             if (parts.length > 0 && parts[0]) {
               eventDate = parts[0];
             }
             if (parts.length > 1 && parts[1]) {
               eventTime = parts[1];
             }
-            console.log(`Parsed Event Date: "${eventDate}"`);
-              console.log(`Parsed Event Time: "${eventTime}"`);
           }
           let image = document.querySelector('[data-ref="edp_event_banner_image"]')?.src || "";
           let price = document.querySelector('[data-ref="edp_price_string_desktop"]')?.textContent.trim() || "Free";
+
+          let description = Array.from(document.querySelectorAll(".css-1gvk1lm p")).map(el => el.textContent.trim()).filter(text => text.length > 0);
+          
+          let additionalImages = Array.from(document.querySelectorAll('.css-13n9y95 img')).map(img => img.src).filter(src => src);
+          let tags = document.querySelector('[data-ref="edp_event_category_desktop"]')?.textContent.trim() || "";
+          tags = tags ? tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0) : [];
 
           return {
             title,
@@ -91,13 +93,23 @@ module.exports = async function scrapeCategory(
             image,
             location: loc,
             price,
-            eventLink: link
+            eventLink: link,
+            description,
+            additionalImages,
+            tags
           };
         },
         location,
         categoryTab,
         link
       );
+      
+      // Print description for each event
+      console.log(`\n📝 Event: ${data.title}`);
+      console.log(`📄 Description: ${JSON.stringify(data.description, null, 2)}`);
+      console.log(`🏷️ Tags: ${JSON.stringify(data.tags, null, 2)}`);
+      console.log(`───────────────────────────────────────`);
+      
       eventList.push(data);
     } catch (e) {
       console.error(`❌ Error scraping ${link}: ${e.message}`);

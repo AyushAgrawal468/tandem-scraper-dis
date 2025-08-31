@@ -1,33 +1,46 @@
 package com.bms.model;
 
-import jakarta.persistence.*;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
 import lombok.*;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
-@Entity
-@Getter @Setter
-@NoArgsConstructor @AllArgsConstructor
+@Document(collection = "events")
+@Data // This generates getters, setters, equals, hashCode, toString
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class Event {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    private String id; // MongoDB uses String IDs by default
 
     private String title;
     private String category;
     private String imageUrl;
     private String location;
 
-    @Column(name = "event_date")
+    @Field("event_date")
     private String eventDate;
 
-    @Column(name = "event_time")
+    @Field("event_time")
     private String eventTime;
 
-    @Column(name = "scraped_at")
+    @Field("scraped_at")
     private LocalDateTime scrapedAt;
     private String sourceLink;
     private String price;
+
+    private List<String> description;
+    private String additionalDescription;
+
+    // MongoDB naturally supports lists and nested objects
+    private List<String> tags;
+    private List<String> genres;
+
+    // Additional flexible fields for any scraped data
+    private Map<String, Object> additionalData;
 }

@@ -18,10 +18,14 @@ const CATEGORY_SUBCATEGORIES = {
 
 module.exports = async function mainScraper(baseUrl) {
     const allEvents = [];
+    
+    // 🧪 TESTING ONLY: Limit total events to 10 for faster testing
+    // TODO: Remove this limit for production scraping
+    const maxEvents = 5; // Set to null or remove this line for unlimited scraping
 
-    for (const location of LOCATIONS) {
+    outerLoop: for (const location of LOCATIONS) {
         const browser = await puppeteer.launch({
-            headless: true,
+            headless: false,
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
 
@@ -29,13 +33,29 @@ module.exports = async function mainScraper(baseUrl) {
             const subCategories = CATEGORY_SUBCATEGORIES[categoryTab];
 
             for (const subCategory of subCategories) {
+                // 🧪 TESTING ONLY: Stop when we reach the test limit
+                if (maxEvents && allEvents.length >= maxEvents) {
+                    console.log(chalk.blue(`[INFO] Reached test limit of ${maxEvents} events. Stopping scraping.`));
+                    await browser.close();
+                    break outerLoop;
+                }
+
                 const url = `https://www.district.in/events/${subCategory.toLowerCase()}-in-${location}-book-tickets`;
                 console.log(chalk.yellow(`[INFO] Scraping: ${url}`));
 
                 try {
                     const events = await scrapeCategory(browser, url, location, categoryTab);
-                    console.log(chalk.green(`[✓] ${events.length} from ${categoryTab} in ${location}`));
-                    allEvents.push(...events);
+                    // 🧪 TESTING ONLY: Limit events added to stay within test limit
+                    const eventsToAdd = maxEvents ? events.slice(0, maxEvents - allEvents.length) : events;
+                    console.log(chalk.green(`[✓] ${eventsToAdd.length} from ${categoryTab} in ${location}`));
+                    allEvents.push(...eventsToAdd);
+                    
+                    // 🧪 TESTING ONLY: Check if we've reached the test limit
+                    if (maxEvents && allEvents.length >= maxEvents) {
+                        console.log(chalk.blue(`[INFO] Reached test limit of ${maxEvents} events. Stopping scraping.`));
+                        await browser.close();
+                        break outerLoop;
+                    }
                 } catch (err) {
                     console.error(chalk.red(`[ERROR] ${categoryTab} in ${location}: ${err.message}`));
                 }
