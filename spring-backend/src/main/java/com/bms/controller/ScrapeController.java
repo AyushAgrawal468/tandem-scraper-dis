@@ -16,6 +16,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @RestController
 @RequestMapping("/api/scrape")
@@ -30,13 +32,72 @@ public class ScrapeController {
     @PostMapping("/district")
     public ResponseEntity<?> scrapeBookMyShow() {
         try {
-            URL url = new URL("http://localhost:3000/scrape");
+            // Use atomic counters for thread-safe counting
+            AtomicInteger totalEventsCount = new AtomicInteger(0);
+            AtomicInteger service3000Count = new AtomicInteger(0);
+            AtomicInteger service3001Count = new AtomicInteger(0);
+            
+            ObjectMapper mapper = new ObjectMapper();
+            mapper.registerModule(new JavaTimeModule());
+            
+            // Start both scraping services in parallel
+            CompletableFuture<Void> service3000Task = CompletableFuture.runAsync(() -> {
+                try {
+                    String response3000 = callScrapingService("http://localhost:3000/scrape", "{\"baseUrl\": \"https://www.district.in\"}");
+                    if (response3000 != null && !response3000.isEmpty()) {
+                        List<Event> events3000 = processScrapedData(response3000, mapper, "service-3000");
+                        // Save immediately when service 3000 completes
+                        eventRepo.saveAll(events3000);
+                        int count = events3000.size();
+                        service3000Count.set(count);
+                        totalEventsCount.addAndGet(count);
+                        System.out.println("✅ Service 3000 completed and saved " + count + " events");
+                    }
+                } catch (Exception e) {
+                    System.err.println("❌ Service 3000 failed: " + e.getMessage());
+                }
+            });
+            
+            CompletableFuture<Void> service3001Task = CompletableFuture.runAsync(() -> {
+                try {
+                    String response3001 = callScrapingService("http://localhost:3001/scrape", "{\"baseUrl\": \"https://www.district.in\"}");
+                    if (response3001 != null && !response3001.isEmpty()) {
+                        List<Event> events3001 = processScrapedData(response3001, mapper, "service-3001");
+                        // Save immediately when service 3001 completes
+                        eventRepo.saveAll(events3001);
+                        int count = events3001.size();
+                        service3001Count.set(count);
+                        totalEventsCount.addAndGet(count);
+                        System.out.println("✅ Service 3001 completed and saved " + count + " events");
+                    }
+                } catch (Exception e) {
+                    System.err.println("❌ Service 3001 failed: " + e.getMessage());
+                }
+            });
+            
+            // Wait for both services to complete
+            CompletableFuture<Void> allServices = CompletableFuture.allOf(service3000Task, service3001Task);
+            allServices.join(); // Wait for completion
+
+            return ResponseEntity.ok("✅ Scraping completed! Total events saved: " + totalEventsCount.get() +
+                    " (Service 3000: " + service3000Count.get() + ", Service 3001: " + service3001Count.get() +
+                    "). Data was saved progressively as each service completed.");
+
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("❌ Error: " + e.getMessage());
+        }
+    }
+
+    private String callScrapingService(String serviceUrl, String payload) {
+        try {
+            URL url = new URL(serviceUrl);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setDoOutput(true);
+            conn.setConnectTimeout(30000); // 30 seconds to establish connection
+            conn.setReadTimeout(14400000); // 4 hours (4 * 60 * 60 * 1000ms) - very generous for scraping
 
-            String payload = "{\"baseUrl\": \"https://www.district.in\"}";
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(payload.getBytes());
             }
@@ -47,11 +108,16 @@ public class ScrapeController {
             while ((line = in.readLine()) != null) responseSB.append(line);
             in.close();
 
-            ObjectMapper mapper = new ObjectMapper();
-            mapper.registerModule(new JavaTimeModule()); // Important!
+            return responseSB.toString();
+        } catch (Exception e) {
+            System.err.println("Error calling " + serviceUrl + ": " + e.getMessage());
+            return null; // Return null if service fails
+        }
+    }
 
-            // Deserialize JSON into List<Event>
-            List<Map<String, Object>> rawList = mapper.readValue(responseSB.toString(), new TypeReference<>() {});
+    private List<Event> processScrapedData(String jsonResponse, ObjectMapper mapper, String source) {
+        try {
+            List<Map<String, Object>> rawList = mapper.readValue(jsonResponse, new TypeReference<>() {});
             List<Event> eventList = new ArrayList<>();
 
             for (Map<String, Object> raw : rawList) {
@@ -64,50 +130,54 @@ public class ScrapeController {
                 String dateStr = (String) raw.get("eventDate");
                 try {
                     if (dateStr != null && !"TBD".equalsIgnoreCase(dateStr)) {
-                        event.setEventDate(dateStr); // Valid date string
+                        event.setEventDate(dateStr);
                     } else {
-                        event.setEventDate(null); // or set default LocalDate.now() if needed
+                        event.setEventDate(null);
                     }
-                }catch(Exception ex){
-                    System.out.println("error in event date"+ex);
+                } catch (Exception ex) {
+                    System.out.println("error in event date: " + ex);
                     event.setEventDate(null);
                 }
-                if(raw.get("eventTime") != null) {
+
+                if (raw.get("eventTime") != null) {
                     event.setEventTime((String) raw.get("eventTime"));
                 } else {
-                    event.setEventTime(null); // Handle missing time
+                    event.setEventTime(null);
                 }
+
                 if (raw.get("eventLink") != null) {
                     event.setSourceLink((String) raw.get("eventLink"));
                 } else {
-                    event.setSourceLink(null); // Handle missing link
-                }
-                if( raw.get("price") != null) {
-                    event.setPrice((String) raw.get("price"));
-                } else {
-                    event.setPrice(null); // Handle missing price
-                }
-                event.setScrapedAt(LocalDateTime.now());
-                if(raw.get("description") != null) {
-                    event.setDescription((List<String>) raw.get("description"));
-                } else {
-                    event.setDescription(null); // Handle missing description
-                }
-                if(raw.get("tags") != null) {
-                    // Cast to List<String> since tags come as an array from Node.js
-                    event.setTags((List<String>) raw.get("tags"));
-                } else {
-                    event.setTags(null); // Handle missing tags
-                }
-                if(raw.get("genres") != null) {
-                    // Cast to List<String> since genres come as an array from Node.js
-                    event.setGenres((List<String>) raw.get("genres"));
-                } else {
-                    event.setGenres(null); // Handle missing genres
+                    event.setSourceLink(null);
                 }
 
-                // MongoDB advantage: Store ALL additional data flexibly
-                // Remove the already processed fields and store everything else
+                if (raw.get("price") != null) {
+                    event.setPrice((String) raw.get("price"));
+                } else {
+                    event.setPrice(null);
+                }
+
+                event.setScrapedAt(LocalDateTime.now());
+
+                if (raw.get("description") != null) {
+                    event.setDescription((List<String> )raw.get("description"));
+                } else {
+                    event.setDescription(null);
+                }
+
+                if (raw.get("tags") != null) {
+                    event.setTags((List<String>) raw.get("tags"));
+                } else {
+                    event.setTags(null);
+                }
+
+                if (raw.get("genres") != null) {
+                    event.setGenres((List<String>) raw.get("genres"));
+                } else {
+                    event.setGenres(null);
+                }
+
+                // Store additional data with source information
                 Map<String, Object> additionalData = new HashMap<>(raw);
                 additionalData.remove("title");
                 additionalData.remove("category");
@@ -121,19 +191,17 @@ public class ScrapeController {
                 additionalData.remove("tags");
                 additionalData.remove("genres");
 
-                // Store any additional scraped data that doesn't fit the standard fields
-                event.setAdditionalData(additionalData);
+                // Add source information to track which service provided the data
+                additionalData.put("scrapingSource", source);
 
+                event.setAdditionalData(additionalData);
                 eventList.add(event);
             }
 
-
-            // Save to DB
-            eventRepo.saveAll(eventList);
-
-            return ResponseEntity.ok("✅ Events scraped and saved: " + eventList.size());
+            return eventList;
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body("❌ Error: " + e.getMessage());
+            System.err.println("Error processing data from " + source + ": " + e.getMessage());
+            return new ArrayList<>();
         }
     }
 
