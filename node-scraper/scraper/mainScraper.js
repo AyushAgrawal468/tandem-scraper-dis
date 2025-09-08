@@ -25,7 +25,7 @@ module.exports = async function mainScraper(baseUrl) {
 
     outerLoop: for (const location of LOCATIONS) {
         const browser = await puppeteer.launch({
-            headless: false,
+            headless: true,
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
 
