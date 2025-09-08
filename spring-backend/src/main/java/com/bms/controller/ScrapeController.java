@@ -5,7 +5,12 @@ import com.bms.repository.EventRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.*;
@@ -17,11 +22,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicInteger;
 
 @RestController
 @RequestMapping("/api/scrape")
 public class ScrapeController {
+
+    private static final Logger logger = LoggerFactory.getLogger(ScrapeController.class);
 
     private final EventRepository eventRepo;
 
@@ -30,16 +36,13 @@ public class ScrapeController {
     }
 
     @PostMapping("/district")
+    @Scheduled(cron = "0 0 0 * * ?") // Every day at 12:00 am
     public ResponseEntity<?> scrapeBookMyShow() {
         try {
-            // Use atomic counters for thread-safe counting
-            AtomicInteger totalEventsCount = new AtomicInteger(0);
-            AtomicInteger service3000Count = new AtomicInteger(0);
-            AtomicInteger service3001Count = new AtomicInteger(0);
-            
+            List<Event> allEvents = new ArrayList<>();
             ObjectMapper mapper = new ObjectMapper();
             mapper.registerModule(new JavaTimeModule());
-            
+
             // Start both scraping services in parallel
             CompletableFuture<Void> service3000Task = CompletableFuture.runAsync(() -> {
                 try {
@@ -48,16 +51,14 @@ public class ScrapeController {
                         List<Event> events3000 = processScrapedData(response3000, mapper, "service-3000");
                         // Save immediately when service 3000 completes
                         eventRepo.saveAll(events3000);
-                        int count = events3000.size();
-                        service3000Count.set(count);
-                        totalEventsCount.addAndGet(count);
-                        System.out.println("✅ Service 3000 completed and saved " + count + " events");
+                        System.out.println("✅ Service 3000 completed and saved " + events3000.size() + " events");
+                        allEvents.addAll(events3000);
                     }
                 } catch (Exception e) {
                     System.err.println("❌ Service 3000 failed: " + e.getMessage());
                 }
             });
-            
+
             CompletableFuture<Void> service3001Task = CompletableFuture.runAsync(() -> {
                 try {
                     String response3001 = callScrapingService("http://localhost:3001/scrape", "{\"baseUrl\": \"https://www.district.in\"}");
@@ -65,23 +66,20 @@ public class ScrapeController {
                         List<Event> events3001 = processScrapedData(response3001, mapper, "service-3001");
                         // Save immediately when service 3001 completes
                         eventRepo.saveAll(events3001);
-                        int count = events3001.size();
-                        service3001Count.set(count);
-                        totalEventsCount.addAndGet(count);
-                        System.out.println("✅ Service 3001 completed and saved " + count + " events");
+                        System.out.println("✅ Service 3001 completed and saved " + events3001.size() + " events");
+                        allEvents.addAll(events3001);
                     }
                 } catch (Exception e) {
                     System.err.println("❌ Service 3001 failed: " + e.getMessage());
                 }
             });
-            
+
             // Wait for both services to complete
             CompletableFuture<Void> allServices = CompletableFuture.allOf(service3000Task, service3001Task);
             allServices.join(); // Wait for completion
 
-            return ResponseEntity.ok("✅ Scraping completed! Total events saved: " + totalEventsCount.get() +
-                    " (Service 3000: " + service3000Count.get() + ", Service 3001: " + service3001Count.get() +
-                    "). Data was saved progressively as each service completed.");
+            return ResponseEntity.ok("✅ Scraping completed! Total events saved: " + allEvents.size() +
+                    " from both services. Data was saved progressively as each service completed.");
 
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body("❌ Error: " + e.getMessage());
@@ -237,6 +235,8 @@ public class ScrapeController {
         return ResponseEntity.ok(events);
     }
 
+//    8 sept 2025 00:00
+
     @PostMapping("/events/flexible")
     public ResponseEntity<Event> saveFlexibleEvent(@RequestBody Map<String, Object> eventData) {
         Event event = Event.builder()
@@ -255,4 +255,23 @@ public class ScrapeController {
         Event savedEvent = eventRepo.save(event);
         return ResponseEntity.ok(savedEvent);
     }
+
+    @GetMapping("/events/scrapedAt")
+    public ResponseEntity<?> getEventsBasedOnScrapedAt(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) String lastScrapedAt
+    ) {
+        try {
+            LocalDateTime parsedDate = LocalDateTime.parse(lastScrapedAt);
+            List<Event> events = eventRepo.findByScrapedAtAfter(parsedDate);
+            logger.info("Fetched {} events scraped after {}", events.size(), lastScrapedAt);
+            return ResponseEntity.ok(events);
+        } catch (Exception e) {
+            logger.error("Invalid lastScrapedAt parameter: {}", lastScrapedAt, e);
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("message", "Invalid 'lastScrapedAt' format. Use ISO_LOCAL_DATE_TIME, e.g. '2024-06-09T12:00:00'");
+            errorResponse.put("status", "error");
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+        }
+    }
+
 }
