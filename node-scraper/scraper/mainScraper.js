@@ -21,7 +21,7 @@ module.exports = async function mainScraper(baseUrl) {
     
     // 🧪 TESTING ONLY: Limit total events to 10 for faster testing
     // TODO: Remove this limit for production scraping
-    const maxEvents = 5; // Set to null or remove this line for unlimited scraping
+    const maxEvents = null; // Set to null or remove this line for unlimited scraping
 
     outerLoop: for (const location of LOCATIONS) {
         const browser = await puppeteer.launch({
