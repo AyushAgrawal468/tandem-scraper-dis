@@ -5,7 +5,7 @@ const scrapeCategory = require('./scrapeCategory');
 
 puppeteer.use(StealthPlugin());
 
-const LOCATIONS = ['mumbai','new-delhi','bangalore','hyderabad','chennai','pune','kolkata','ahmedabad','jaipur','gurgaon','noida','chandigarh','indore'];
+const LOCATIONS = ['indore','mumbai','new-delhi','bangalore','hyderabad','chennai','pune','kolkata','ahmedabad','jaipur','gurgaon','noida','chandigarh'];
 const CATEGORY_TABS = ['Activities','Events'];
 const SUB_CATEGORY_EVENT_LIST = ['music', 'comedy', 'nightlife','performances','sports','food-drinks','fests-fairs','social-mixers','screenings','fitness','conferences','expos','art-exhibitions'];
 const SUB_CATEGORY_ACTIVITY_LIST = ['theme-parks', 'water-parks', 'adventure','game-zones','kids-play','workshops','games-quizzes','art-craft','fitness','pets','esports','museums'];
@@ -21,7 +21,7 @@ module.exports = async function mainScraper(baseUrl) {
     
     // 🧪 TESTING ONLY: Limit total events to 10 for faster testing
     // TODO: Remove this limit for production scraping
-    const maxEvents = null; // Set to null or remove this line for unlimited scraping
+    const maxEvents = 500; // Set to null or remove this line for unlimited scraping
 
     outerLoop: for (const location of LOCATIONS) {
         const browser = await puppeteer.launch({
