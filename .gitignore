@@ -1,119 +1,110 @@
-# Angular specific
-/dist/
-/out-tsc/
-/tmp/
-/coverage/
-/e2e/test-output/
-/.angular/
+###############################################
+# ANGULAR / FRONTEND
+###############################################
+
+# Angular build & temp folders
+dist/
+out-tsc/
+tmp/
 .angular/
+.angular/cache/
 
-# Node modules and dependency files
+# Angular CLI config (old versions)
+.angular-cli.json
+.ng/
+
+# Coverage
+coverage/
+*.lcov
+.nyc_output
+
+###############################################
+# NODE / NPM / YARN
+###############################################
+
+# Node modules
 node_modules/
-/package-lock.json
-/yarn.lock
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
-# Environment files
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# Package manager locks
+package-lock.json
+yarn.lock
 
-# Angular CLI and build artefacts
-/.angular-cli.json
-/.ng/
-
-# TypeScript cache
-*.tsbuildinfo
-
-# Logs
-logs
-*.log
+# Debug logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
 
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
+# REPL history
+.node_repl_history
 
-# Coverage directory used by tools like istanbul
-coverage/
-*.lcov
-.nyc_output
-
-# node-waf configuration
-.lock-wscript
-
-# Compiled binary addons (https://nodejs.org/api/addons.html)
-build/Release
-
-# Dependency directories
-jspm_packages/
-
-# Snowpack dependency directory (https://snowpack.dev/)
-web_modules/
-
-# TypeScript cache
-*.tsbuildinfo
-
-# Optional npm cache directory
+# Optional caches
 .npm
-
-# Optional eslint cache
 .eslintcache
-
-# Optional stylelint cache
 .stylelintcache
 
-# Microbundle cache
+###############################################
+# ENVIRONMENT FILES
+###############################################
+
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+###############################################
+# BUNDLERS / BUILD TOOLS
+###############################################
+
+# Parcel
+.cache
+.parcel-cache
+
+# Snowpack
+web_modules/
+
+# Microbundle caches
 .rpt2_cache/
 .rts2_cache_cjs/
 .rts2_cache_es/
 .rts2_cache_umd/
 
-# Optional REPL history
-.node_repl_history
+# Next.js
+.next/
+out/
 
-# Output of 'npm pack'
+# Nuxt.js
+.nuxt/
+
+# Gatsby
+.cache/
+public/
+
+# Storybook
+.out/
+.storybook-out/
+storybook-static/
+
+###############################################
+# JAVASCRIPT / TYPESCRIPT
+###############################################
+
+# TS build info
+*.tsbuildinfo
+
+# Compiled addons
+build/Release/
+
+# npm pack output
 *.tgz
 
-# Yarn Integrity file
-.yarn-integrity
+###############################################
+# JAVA / SPRING BOOT
+###############################################
 
-# parcel-bundler cache (https://parceljs.org/)
-.cache
-.parcel-cache
-
-# Next.js build output
-.next
-out
-
-# Nuxt.js build / generate output
-.nuxt
-dist
-
-# Gatsby files
-.cache/
-public
-
-# Storybook build outputs
-.out
-.storybook-out
-storybook-static
-
-# Temporary folders
-tmp/
-temp/
-
-# Java specific
+# Java compiled files
 *.class
 *.jar
 *.war
@@ -135,11 +126,15 @@ buildNumber.properties
 .mvn/wrapper/maven-wrapper.jar
 
 # Gradle
-.gradle
+.gradle/
 build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
+
+###############################################
+# IDE / EDITOR
+###############################################
 
 # IntelliJ IDEA
 .idea/
@@ -155,7 +150,7 @@ out/
 .classpath
 .factorypath
 .project
-.settings
+.settings/
 .springBeans
 .sts4-cache
 bin/
@@ -172,28 +167,34 @@ bin/
 # VS Code
 .vscode/
 
-# Spring Boot
-HELP.md
-spring-boot-devtools
+###############################################
+# DATABASE / STORAGE
+###############################################
 
-# Database files
 *.db
 *.sqlite
 *.sqlite3
 
-# Scraped data (you might want to keep this or modify based on your needs)
+###############################################
+# SCRAPED DATA (OPTIONAL)
+###############################################
+
 scraped_data.json
 *.json.bak
 
-# OS generated files
+###############################################
+# OS / SYSTEM FILES
+###############################################
+
+# macOS
 .DS_Store
 .DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
-ehthumbs.db
-Thumbs.db
 
 # Windows
+ehthumbs.db
+Thumbs.db
 *.tmp
 *.temp
