@@ -2,6 +2,7 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const chalk = require('chalk');
 const scrapeCategory = require('./scrapeCategory');
+const axios = require('axios');
 
 puppeteer.use(StealthPlugin());
 
@@ -16,7 +17,7 @@ const CATEGORY_SUBCATEGORIES = {
 };
 
 
-module.exports = async function mainScraper(baseUrl) {
+module.exports = async function mainScraper(baseUrl,callbackUrl) {
     const allEvents = [];
     
     // 🧪 TESTING ONLY: Limit total events to 10 for faster testing
@@ -25,7 +26,7 @@ module.exports = async function mainScraper(baseUrl) {
 
     outerLoop: for (const location of LOCATIONS) {
         const browser = await puppeteer.launch({
-            headless: true,
+            headless: false,
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
 
@@ -50,20 +51,26 @@ module.exports = async function mainScraper(baseUrl) {
                     console.log(chalk.green(`[✓] ${eventsToAdd.length} from ${categoryTab} in ${location}`));
                     allEvents.push(...eventsToAdd);
                     
+                    console.log("callbackUrl: "+callbackUrl);
+
+
+                    await axios.post(callbackUrl, eventsToAdd);
+
                     // 🧪 TESTING ONLY: Check if we've reached the test limit
                     if (maxEvents && allEvents.length >= maxEvents) {
                         console.log(chalk.blue(`[INFO] Reached test limit of ${maxEvents} events. Stopping scraping.`));
                         await browser.close();
                         break outerLoop;
                     }
+                    
                 } catch (err) {
                     console.error(chalk.red(`[ERROR] ${categoryTab} in ${location}: ${err.message}`));
                 }
-            }
+            }            
         }
 
-        await browser.close();
+        await browser.close();   
     }
-
+    
     return allEvents;
 };

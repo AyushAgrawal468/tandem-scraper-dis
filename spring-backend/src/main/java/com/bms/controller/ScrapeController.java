@@ -30,6 +30,7 @@ public class ScrapeController {
     private static final Logger logger = LoggerFactory.getLogger(ScrapeController.class);
 
     private final EventRepository eventRepo;
+    ObjectMapper mapper = new ObjectMapper();
 
     public ScrapeController(EventRepository eventRepo) {
         this.eventRepo = eventRepo;
@@ -40,13 +41,13 @@ public class ScrapeController {
     public ResponseEntity<?> scrapeBookMyShow() {
         try {
             List<Event> allEvents = new ArrayList<>();
-            ObjectMapper mapper = new ObjectMapper();
+
             mapper.registerModule(new JavaTimeModule());
 
             // Start both scraping services in parallel
             CompletableFuture<Void> service3000Task = CompletableFuture.runAsync(() -> {
                 try {
-                    String response3000 = callScrapingService("http://localhost:3000/scrape", "{\"baseUrl\": \"https://www.district.in\"}");
+                    String response3000 = callScrapingService("http://localhost:3000/scrape", "{\"baseUrl\": \"https://www.district.in\",\"callbackUrl\": \"http://localhost:8081/api/scrape/callback\"}");
                     if (response3000 != null && !response3000.isEmpty()) {
                         List<Event> events3000 = processScrapedData(response3000, mapper, "service-3000");
                         // Save immediately when service 3000 completes
@@ -61,7 +62,7 @@ public class ScrapeController {
 
             CompletableFuture<Void> service3001Task = CompletableFuture.runAsync(() -> {
                 try {
-                    String response3001 = callScrapingService("http://localhost:3001/scrape", "{\"baseUrl\": \"https://www.district.in\"}");
+                    String response3001 = callScrapingService("http://localhost:3001/scrape", "{\"baseUrl\": \"https://in.bookmyshow.com\",\"callbackUrl\": \"http://localhost:8081/api/scrape/callback\"}");
                     if (response3001 != null && !response3001.isEmpty()) {
                         List<Event> events3001 = processScrapedData(response3001, mapper, "service-3001");
                         // Save immediately when service 3001 completes
@@ -195,7 +196,6 @@ public class ScrapeController {
                 event.setAdditionalData(additionalData);
                 eventList.add(event);
             }
-
             return eventList;
         } catch (Exception e) {
             System.err.println("Error processing data from " + source + ": " + e.getMessage());
@@ -273,5 +273,17 @@ public class ScrapeController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
         }
     }
-
+    //create one more API
+    @PostMapping("/callback")
+    public ResponseEntity<?> scraperCallback(@RequestBody String jsonArray) {
+        try {
+            List<Event> events = processScrapedData(jsonArray, mapper, "BOOKMYSHOW");
+            eventRepo.saveAll(events);
+            return ResponseEntity.ok().build();
+        } catch (Exception ex) {
+            logger.error("Callback batch failed", ex);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid batch structure");
+        }
+    }
 }
+
