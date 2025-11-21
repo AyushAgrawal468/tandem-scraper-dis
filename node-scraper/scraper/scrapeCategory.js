@@ -1,27 +1,9 @@
-// scrapeCategory.js
-// Exports: async function scrapeCategory(browser, categoryUrl, location, categoryTab)
-// Returns: Array of event objects for that subcategory
+// scraper/scrapeCategory.js
+// Scrapes a category page on district.in
+// Exports: async function scrapeCategory(browser, url, location, categoryTab, options)
 
-const chalk = require('chalk');
-
-/**
- * Auto-scroll helper for listing pages
- */
-async function autoScroll(page, scrollDelay = 250, maxScrolls = 100) {
-  await page.evaluate(
-    async (scrollDelay, maxScrolls) => {
-      const distance = 1000;
-      let scrolled = 0;
-      for (let i = 0; i < maxScrolls; i++) {
-        window.scrollBy(0, distance);
-        await new Promise(r => setTimeout(r, scrollDelay));
-        scrolled += distance;
-      }
-    },
-    scrollDelay,
-    maxScrolls
-  );
-}
+const { autoScroll, delay } = require("./utils");
+const chalk = require("chalk");
 
 /**
  * Open a URL in a fresh page with retries and timeout per attempt.
@@ -29,8 +11,8 @@ async function autoScroll(page, scrollDelay = 250, maxScrolls = 100) {
  */
 async function openWithRetries(browser, url, {
   maxAttempts = 3,
-  attemptTimeoutMs = 10000,
-  waitUntil = 'domcontentloaded'
+  attemptTimeoutMs = 30000,
+  waitUntil = "networkidle2"
 } = {}) {
   let lastErr = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -39,159 +21,218 @@ async function openWithRetries(browser, url, {
       page = await browser.newPage();
       page.setDefaultNavigationTimeout(attemptTimeoutMs);
       page.setDefaultTimeout(attemptTimeoutMs);
-      await page.goto(url, { timeout: attemptTimeoutMs, waitUntil });
+      await page.goto(url, { waitUntil, timeout: attemptTimeoutMs });
       return { success: true, page };
     } catch (err) {
       lastErr = err;
       try {
         if (page && !page.isClosed()) await page.close();
-      } catch (e) { /* ignore close error */ }
+      } catch (_) {}
       const backoffMs = Math.min(5000, 500 * attempt);
+      console.warn(chalk.yellow(
+        `[WARN] openWithRetries failed for ${url} (attempt ${attempt}): ${err.message || err}`
+      ));
       await new Promise(r => setTimeout(r, backoffMs));
     }
   }
   return { success: false, error: lastErr };
 }
 
-/**
- * Extract event links from listing page.
- * Adjust selector logic to match the site's DOM.
- */
-async function collectEventLinksFromListing(page) {
-  // Example: adjust selector to your site's event card anchors
-  const links = await page.evaluate(() => {
-    const anchors = Array.from(document.querySelectorAll('a'));
-    // Filter anchors that look like event links (heuristic)
-    return anchors
-      .map(a => a.href)
-      .filter(href => href && href.includes('/events/'))
-      .filter((v, i, a) => a.indexOf(v) === i); // unique
-  });
-  return links;
-}
-
-/**
- * Extract structured event data from a detail page.
- * Update selectors to match actual detail page markup.
- */
-async function extractEventFromPage(page, sourceUrl, location, categoryTab) {
-  // Example extraction — adapt selectors for the real site
-  const data = await page.evaluate((sourceUrl, location, categoryTab) => {
-    const safeText = (sel) => {
-      try { return document.querySelector(sel)?.innerText?.trim() ?? null; } catch { return null; }
-    };
-    const safeAttr = (sel, attr) => {
-      try { return document.querySelector(sel)?.getAttribute(attr) ?? null; } catch { return null; }
-    };
-
-    const title = safeText('h1') || safeText('.event-title') || safeText('.title');
-    const image = safeAttr('img', 'src') || safeAttr('.hero img', 'src');
-    const date = safeText('.date') || safeText('.event-date') || null;
-    const time = safeText('.time') || null;
-    const locationText = safeText('.location') || safeText('.venue') || null;
-    const description = (() => {
-      const el = document.querySelector('.description') || document.querySelector('.event-desc');
-      if (!el) return null;
-      return Array.from(el.querySelectorAll('p')).map(p => p.innerText.trim()).filter(Boolean);
-    })();
-    const price = safeText('.price') || null;
-    const tags = Array.from(document.querySelectorAll('.tags .tag')).map(t => t.innerText.trim()).filter(Boolean);
-
-    return {
-      title,
-      image,
-      eventDate: date,
-      eventTime: time,
-      location: locationText,
-      description,
-      price,
-      tags,
-      sourceLink: sourceUrl,
-      scrapingSource: 'district.in',
-      scrapedAt: new Date().toISOString(),
-      scrapedLocation: location,
-      categoryTab
-    };
-  }, sourceUrl, location, categoryTab);
-
-  return data;
-}
-
-/**
- * Main scrapeCategory implementation.
- */
-module.exports = async function scrapeCategory(browser, categoryUrl, location, categoryTab, {
-  listingTimeoutMs = 15000,
-  maxEventsToCollect = 200,
-  perEventMaxAttempts = 3,
-  perEventAttemptTimeoutMs = 10000,
-  maxConsecutiveFailures = 5
-} = {}) {
+module.exports = async function scrapeCategory(
+  browser,
+  url,
+  location,
+  categoryTab,
+  {
+    maxEventsToCollect = 200,
+    perEventMaxAttempts = 3,
+    perEventAttemptTimeoutMs = 30000,
+    maxConsecutiveFailures = 5,
+    listingMaxAttempts = 2,
+    listingTimeoutMs = 30000
+  } = {}
+) {
   const eventList = [];
   let consecutiveFailures = 0;
 
-  let listingPage;
+  // Ensure geolocation permissions like your working version
+  const context = browser.defaultBrowserContext();
+  await context.overridePermissions("https://www.district.in", ["geolocation"]);
+
+  // --- Load listing page with retries ---
+  const listingResult = await openWithRetries(browser, url, {
+    maxAttempts: listingMaxAttempts,
+    attemptTimeoutMs: listingTimeoutMs,
+    waitUntil: "networkidle2"
+  });
+
+  if (!listingResult.success) {
+    console.error(
+      chalk.red(`[ERROR] Failed to load listing ${url}: ${listingResult.error?.message || listingResult.error}`)
+    );
+    return eventList;
+  }
+
+  const listingPage = listingResult.page;
+
   try {
-    // Open listing page (single attempt here; listing hangs are less common)
-    listingPage = await browser.newPage();
-    listingPage.setDefaultNavigationTimeout(listingTimeoutMs);
-    listingPage.setDefaultTimeout(listingTimeoutMs);
+    // Set dummy geolocation (like working version)
+    await listingPage.setGeolocation({ latitude: 0, longitude: 0 });
 
-    // If the listing page sometimes needs a specific user-agent or headers, set them here.
-    await listingPage.goto(categoryUrl, { timeout: listingTimeoutMs, waitUntil: 'domcontentloaded' });
+    await delay(8000);          // let dynamic content load
+    await autoScroll(listingPage);
 
-    // Auto-scroll to load lazy items
-    try { await autoScroll(listingPage, 300, 60); } catch (e) { /* ignore scroll errors */ }
+    // Setup extended URL path based on category
+    let extendedUrl = "";
+    switch (categoryTab) {
+      case "Events":
+      case "Activities":
+        extendedUrl = "/events/";
+        break;
+      default:
+        extendedUrl = "";
+        break;
+    }
 
-    // collect event links
-    const eventLinks = await collectEventLinksFromListing(listingPage);
-    console.log(chalk.blue(`[INFO] Found ${eventLinks.length} links on listing ${categoryUrl}`));
+    // Use the known-working selector for event links
+    const eventLinks = await listingPage.$$eval(
+      `div.dds-grid a[href*="${extendedUrl}"]`,
+      anchors => {
+        return anchors
+          .filter(a => {
+            const text = a.innerText?.trim() || "";
+            return text.length > 0 && a.href.includes("/events/");
+          })
+          .map(a => a.href);
+      }
+    );
 
-    // iterate event links
+    console.log(
+      chalk.blue(`[INFO] Found ${eventLinks.length} links on listing ${url} (${categoryTab} / ${location})`)
+    );
+
+    // --- Iterate event links with retries per event ---
     for (const link of eventLinks) {
       if (eventList.length >= maxEventsToCollect) break;
 
-      // load detail page with retries
-      const { success, page, error } = await openWithRetries(browser, link, {
+      const { success, page: detailPage, error } = await openWithRetries(browser, link, {
         maxAttempts: perEventMaxAttempts,
         attemptTimeoutMs: perEventAttemptTimeoutMs,
-        waitUntil: 'domcontentloaded'
+        waitUntil: "networkidle2"
       });
 
       if (!success) {
-        console.error(chalk.red(`[ERROR] Failed to load event ${link}: ${error?.message || error}`));
+        console.error(
+          chalk.red(`[ERROR] Failed to load event ${link}: ${error?.message || error}`)
+        );
         consecutiveFailures++;
         if (consecutiveFailures >= maxConsecutiveFailures) {
-          console.warn(chalk.yellow(`[WARN] ${consecutiveFailures} consecutive event failures — aborting category ${categoryUrl}`));
+          console.warn(
+            chalk.yellow(
+              `[WARN] ${consecutiveFailures} consecutive event failures — aborting category ${url}`
+            )
+          );
           break;
         }
-        continue; // move to next link
+        continue;
       }
 
-      // loaded successfully; reset consecutive failures
+      // Reset failure streak on success
       consecutiveFailures = 0;
 
       try {
-        // Small stabilization wait if needed
-        await page.waitForTimeout(300);
+        await delay(5000);
 
-        // Extract event data
-        const eventData = await extractEventFromPage(page, link, location, categoryTab);
-        eventList.push(eventData);
-        console.log(chalk.green(`[✓] Scraped event: ${eventData.title ?? eventData.sourceLink}`));
-      } catch (procErr) {
-        console.error(chalk.red(`[ERROR] Processing ${link}: ${procErr?.message || procErr}`));
+        const data = await detailPage.evaluate(
+          async (loc, categoryTab, link) => {
+            const title = document.querySelector("h1")?.innerText || "Untitled";
+
+            const eventDateAndTime =
+              document.querySelector('[data-ref="edp_event_datestring_desktop"]')?.textContent?.trim() ||
+              "Date not found";
+
+            let eventDate = "TBD";
+            let eventTime = "TBD";
+            if (eventDateAndTime !== "Date not found") {
+              const parts = eventDateAndTime
+                .split("|")
+                .map(part => part.trim())
+                .filter(Boolean);
+              if (parts[0]) eventDate = parts[0];
+              if (parts[1]) eventTime = parts[1];
+            }
+
+            const image =
+              document.querySelector('[data-ref="edp_event_banner_image"]')?.src || "";
+
+            const price =
+              document.querySelector('[data-ref="edp_price_string_desktop"]')?.textContent.trim() ||
+              "Free";
+
+            const description = Array.from(
+              document.querySelectorAll(".css-1gvk1lm p")
+            )
+              .map(el => el.textContent.trim())
+              .filter(text => text.length > 0);
+
+            const additionalImages = Array.from(
+              document.querySelectorAll(".css-13n9y95 img")
+            )
+              .map(img => img.src)
+              .filter(Boolean);
+
+            let tags =
+              document.querySelector('[data-ref="edp_event_category_desktop"]')?.textContent.trim() ||
+              "";
+            tags = tags
+              ? tags.split(",").map(tag => tag.trim()).filter(tag => tag.length > 0)
+              : [];
+
+            return {
+              title,
+              category: categoryTab,
+              eventDate,
+              eventTime,
+              image,
+              location: loc,
+              price,
+              eventLink: link,
+              description,
+              additionalImages,
+              tags
+            };
+          },
+          location,
+          categoryTab,
+          link
+        );
+
+        console.log(`\n📝 Event: ${data.title}`);
+        console.log(`📄 Description: ${JSON.stringify(data.description, null, 2)}`);
+        console.log(`🏷️ Tags: ${JSON.stringify(data.tags, null, 2)}`);
+        console.log(`───────────────────────────────────────`);
+
+        eventList.push(data);
+      } catch (e) {
+        console.error(`❌ Error scraping ${link}: ${e.message}`);
       } finally {
-        // ensure page closed
-        try { if (page && !page.isClosed()) await page.close(); } catch (e) { /* ignore */ }
+        try {
+          await detailPage.close();
+        } catch (_) {}
       }
     }
   } catch (err) {
-    console.error(chalk.red(`[ERROR] scrapeCategory failed for ${categoryUrl}: ${err?.message || err}`));
+    console.error(
+      chalk.red(`[ERROR] scrapeCategory failed for ${url}: ${err?.message || err}`)
+    );
   } finally {
-    // Close listing page
-    try { if (listingPage && !listingPage.isClosed()) await listingPage.close(); } catch (e) { /* ignore */ }
+    try {
+      if (listingPage && !listingPage.isClosed()) await listingPage.close();
+    } catch (_) {}
   }
 
+  console.log(
+    `\n✅ Finished scraping ${eventList.length} events from "${categoryTab}" in ${location}`
+  );
   return eventList;
 };
