@@ -75,8 +75,23 @@ public class ScrapeController {
                 }
             });
 
+            CompletableFuture<Void> service3002Task = CompletableFuture.runAsync(() -> {
+                try {
+                    String response3002 = callScrapingService("http://localhost:3002/scrape", "{\"baseUrl\": \"https://www.airbnb.co.in\",\"callbackUrl\": \"http://localhost:8081/api/scrape/callback\"}");
+                    if (response3002 != null && !response3002.isEmpty()) {
+                        List<Event> events3002 = processScrapedData(response3002, mapper, "service-3002");
+                        // Save immediately when service 3001 completes
+                        eventRepo.saveAll(events3002);
+                        System.out.println("✅ Service 3002 completed and saved " + events3002.size() + " events");
+                        allEvents.addAll(events3002);
+                    }
+                } catch (Exception e) {
+                    System.err.println("❌ Service 3002 failed: " + e.getMessage());
+                }
+            });
+
             // Wait for both services to complete
-            CompletableFuture<Void> allServices = CompletableFuture.allOf(service3000Task, service3001Task);
+            CompletableFuture<Void> allServices = CompletableFuture.allOf(service3000Task, service3001Task,service3002Task);
             allServices.join(); // Wait for completion
 
             return ResponseEntity.ok("✅ Scraping completed! Total events saved: " + allEvents.size() +
