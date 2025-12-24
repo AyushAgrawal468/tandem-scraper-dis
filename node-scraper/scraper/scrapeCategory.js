@@ -6,21 +6,19 @@ module.exports = async function scrapeCategory(
   location,
   categoryTab,
 ) {
-
      const context = browser.defaultBrowserContext(); // ✅ context comes from browser
      await context.overridePermissions("https://www.district.in", ['geolocation']); // or empty array if denying
-
      const page = await browser.newPage();
 
       // ✅ Set geolocation permission for the page
   await page.setGeolocation({ latitude: 0, longitude: 0 }); // dummy location
-  await page.goto(url, { waitUntil: "networkidle2", timeout: 0 });
-
-
+  await page.goto(url, {
+  waitUntil: "domcontentloaded",
+  timeout: 30000 });
+  
   await delay(8000);
-
-
   await autoScroll(page);
+
   // Setup extended URL path based on category
   let extendedUrl = "";
   switch (categoryTab) {
