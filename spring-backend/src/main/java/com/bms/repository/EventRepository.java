@@ -46,4 +46,7 @@ public interface EventRepository extends MongoRepository<Event, String> {
     // Find events with specific additional data field
     @Query("{'additionalData.?0': {'$exists': true}}")
     List<Event> findByAdditionalDataFieldExists(String fieldName);
+
+    //get me the list of all the events that are scrapped before a certain date
+    List<Event> findByScrapedAtBefore(LocalDateTime dateTime);
 }

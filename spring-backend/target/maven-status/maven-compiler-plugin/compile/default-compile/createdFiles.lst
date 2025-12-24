@@ -3,4 +3,5 @@ com\bms\repository\EventRepository.class
 com\bms\model\Event.class
 com\bms\model\Event$EventBuilder.class
 com\bms\controller\ScrapeController.class
+com\bms\services\ScrapperSchedular.class
 com\bms\ScraperBackendApplication.class
