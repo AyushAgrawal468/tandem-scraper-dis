@@ -22,14 +22,14 @@ module.exports = async function mainScraper(baseUrl,callbackUrl) {
     
     // 🧪 TESTING ONLY: Limit total events to 10 for faster testing
     // TODO: Remove this limit for production scraping
-    const maxEvents = 500; // Set to null or remove this line for unlimited scraping
-
-    outerLoop: for (const location of LOCATIONS) {
-        const browser = await puppeteer.launch({
+    const maxEvents = 1000; // Set to null or remove this line for unlimited scraping
+    const browser = await puppeteer.launch({
             headless: false,
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
 
+    outerLoop: for (const location of LOCATIONS) {
+       
         for (const categoryTab of CATEGORY_TABS) {
             const subCategories = CATEGORY_SUBCATEGORIES[categoryTab];
 
@@ -69,8 +69,8 @@ module.exports = async function mainScraper(baseUrl,callbackUrl) {
             }            
         }
 
-        await browser.close();   
+       
     }
-    
+    await browser.close();  
     return allEvents;
 };

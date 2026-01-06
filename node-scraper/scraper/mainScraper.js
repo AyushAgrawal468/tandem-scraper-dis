@@ -3,74 +3,122 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const chalk = require('chalk');
 const scrapeCategory = require('./scrapeCategory');
 const axios = require('axios');
+const pLimit = require('p-limit');
 
 puppeteer.use(StealthPlugin());
 
-const LOCATIONS = ['indore','mumbai','new-delhi','bangalore','hyderabad','chennai','pune','kolkata','ahmedabad','jaipur','gurgaon','noida','chandigarh'];
-const CATEGORY_TABS = ['Activities','Events'];
-const SUB_CATEGORY_EVENT_LIST = ['music', 'comedy', 'nightlife','performances','sports','food-drinks','fests-fairs','social-mixers','screenings','fitness','conferences','expos','art-exhibitions'];
-const SUB_CATEGORY_ACTIVITY_LIST = ['theme-parks', 'water-parks', 'adventure','game-zones','kids-play','workshops','games-quizzes','art-craft','fitness','pets','esports','museums'];
+const LOCATIONS = [
+  'indore', 'mumbai', 'new-delhi', 'bangalore', 'hyderabad',
+  'chennai', 'pune', 'kolkata', 'ahmedabad', 'jaipur',
+  'gurgaon', 'noida', 'chandigarh'
+];
+
+const CATEGORY_TABS = ['Activities', 'Events'];
+
+const SUB_CATEGORY_EVENT_LIST = [
+  'music', 'comedy', 'nightlife', 'performances', 'sports',
+  'food-drinks', 'fests-fairs', 'social-mixers', 'screenings',
+  'fitness', 'conferences', 'expos', 'art-exhibitions'
+];
+
+const SUB_CATEGORY_ACTIVITY_LIST = [
+  'theme-parks', 'water-parks', 'adventure', 'game-zones',
+  'kids-play', 'workshops', 'games-quizzes', 'art-craft',
+  'fitness', 'pets', 'esports', 'museums'
+];
 
 const CATEGORY_SUBCATEGORIES = {
-    Events: SUB_CATEGORY_EVENT_LIST,
-    Activities: SUB_CATEGORY_ACTIVITY_LIST,
+  Events: SUB_CATEGORY_EVENT_LIST,
+  Activities: SUB_CATEGORY_ACTIVITY_LIST
 };
 
+// 🔒 Max parallel pages (CRITICAL for CPU control)
+const limit = pLimit(2);
 
-module.exports = async function mainScraper(baseUrl,callbackUrl) {
-    const allEvents = [];
-    
-    // 🧪 TESTING ONLY: Limit total events to 10 for faster testing
-    // TODO: Remove this limit for production scraping
-    const maxEvents = 500; // Set to null or remove this line for unlimited scraping
+// 🧪 Safety limit (remove or raise for full production)
+const MAX_EVENTS = 1000;
 
-    outerLoop: for (const location of LOCATIONS) {
-        const browser = await puppeteer.launch({
-            headless: false,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-        });
+module.exports = async function mainScraper(baseUrl, callbackUrl) {
+  const allEvents = [];
 
-        for (const categoryTab of CATEGORY_TABS) {
-            const subCategories = CATEGORY_SUBCATEGORIES[categoryTab];
+  const browser = await puppeteer.launch({
+    headless: 'new',
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-extensions',
+      '--disable-background-networking',
+      '--disable-sync',
+      '--disable-default-apps',
+      '--mute-audio'
+    ]
+  });
 
-            for (const subCategory of subCategories) {
-                // 🧪 TESTING ONLY: Stop when we reach the test limit
-                if (maxEvents && allEvents.length >= maxEvents) {
-                    console.log(chalk.blue(`[INFO] Reached test limit of ${maxEvents} events. Stopping scraping.`));
-                    await browser.close();
-                    break outerLoop;
-                }
+  try {
+    for (const location of LOCATIONS) {
+      for (const categoryTab of CATEGORY_TABS) {
+        const subCategories = CATEGORY_SUBCATEGORIES[categoryTab];
 
-                const url = `https://www.district.in/events/${subCategory.toLowerCase()}-in-${location}-book-tickets`;
-                console.log(chalk.yellow(`[INFO] Scraping: ${url}`));
+        const tasks = subCategories.map(subCategory =>
+          limit(async () => {
+            if (MAX_EVENTS && allEvents.length >= MAX_EVENTS) return;
 
-                try {
-                    const events = await scrapeCategory(browser, url, location, categoryTab);
-                    // 🧪 TESTING ONLY: Limit events added to stay within test limit
-                    const eventsToAdd = maxEvents ? events.slice(0, maxEvents - allEvents.length) : events;
-                    console.log(chalk.green(`[✓] ${eventsToAdd.length} from ${categoryTab} in ${location}`));
-                    allEvents.push(...eventsToAdd);
-                    
-                    console.log("callbackUrl: "+callbackUrl);
+            const url = `https://www.district.in/events/${subCategory}-in-${location}-book-tickets`;
+            console.log(chalk.yellow(`[INFO] Scraping: ${url}`));
 
+            try {
+              const events = await scrapeCategory(
+                browser,
+                url,
+                location,
+                categoryTab
+              );
 
-                    await axios.post(callbackUrl, eventsToAdd);
+              const remaining = MAX_EVENTS
+                ? MAX_EVENTS - allEvents.length
+                : events.length;
 
-                    // 🧪 TESTING ONLY: Check if we've reached the test limit
-                    if (maxEvents && allEvents.length >= maxEvents) {
-                        console.log(chalk.blue(`[INFO] Reached test limit of ${maxEvents} events. Stopping scraping.`));
-                        await browser.close();
-                        break outerLoop;
-                    }
-                    
-                } catch (err) {
-                    console.error(chalk.red(`[ERROR] ${categoryTab} in ${location}: ${err.message}`));
-                }
-            }            
-        }
+              const eventsToAdd = MAX_EVENTS
+                ? events.slice(0, remaining)
+                : events;
 
-        await browser.close();   
+              if (!eventsToAdd.length) return;
+
+              allEvents.push(...eventsToAdd);
+
+              await axios.post(callbackUrl, eventsToAdd, {
+                timeout: 10_000
+              });
+
+              console.log(
+                chalk.green(
+                  `[✓] ${eventsToAdd.length} ${categoryTab} events from ${location}`
+                )
+              );
+
+              // 🧊 Cooldown to reduce sustained CPU pressure
+              await new Promise(r => setTimeout(r, 800));
+
+            } catch (err) {
+              console.error(
+                chalk.red(
+                  `[ERROR] ${categoryTab} | ${location} | ${subCategory} → ${err.message}`
+                )
+              );
+            }
+          })
+        );
+
+        await Promise.all(tasks);
+      }
     }
-    
-    return allEvents;
+  } catch (err) {
+    console.error(chalk.red(`[FATAL] ${err.message}`));
+  } finally {
+    await browser.close();
+  }
+
+  return allEvents;
 };

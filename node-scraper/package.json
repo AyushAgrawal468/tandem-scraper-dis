@@ -14,6 +14,7 @@
     "axios": "^1.13.2",
     "chalk": "^4.1.2",
     "express": "^5.1.0",
+    "p-limit": "^3.x.x",
     "puppeteer": "^24.30.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2"

@@ -1,122 +1,161 @@
-const { autoScroll, delay } = require("./utils");
+const { autoScroll, delay } = require('./utils');
+
+// 🔒 Hard limit to avoid runaway CPU on bad pages
+const MAX_EVENTS_PER_CATEGORY = 80;
 
 module.exports = async function scrapeCategory(
   browser,
   url,
   location,
-  categoryTab,
+  categoryTab
 ) {
-     const context = browser.defaultBrowserContext(); // ✅ context comes from browser
-     await context.overridePermissions("https://www.district.in", ['geolocation']); // or empty array if denying
-     const page = await browser.newPage();
+  const page = await browser.newPage();
 
-      // ✅ Set geolocation permission for the page
-  await page.setGeolocation({ latitude: 0, longitude: 0 }); // dummy location
-  await page.goto(url, {
-  waitUntil: "domcontentloaded",
-  timeout: 30000 });
-  
-  await delay(8000);
-  await autoScroll(page);
-
-  // Setup extended URL path based on category
-  let extendedUrl = "";
-  switch (categoryTab) {
-    case "Events":
-      extendedUrl = "/events/";
-      break;
-    case "Activities":
-      extendedUrl = "/events/";
-      break;
-    default:
-      extendedUrl = "";
-      break;
-  }
-
-  const eventLinks = await page.$$eval(
-      `div.dds-grid a[href*="${extendedUrl}"]`,
-      (anchors) => {
-        return anchors
-          .filter((a) => {
-            const text = a.innerText?.trim() || "";
-            return text.length > 0 && a.href.includes("/events/");
-          })
-          .map((a) => a.href);
+  try {
+    // ---------------------------
+    // 1️⃣ Block heavy resources
+    // ---------------------------
+    await page.setRequestInterception(true);
+    page.on('request', req => {
+      const type = req.resourceType();
+      if (['image', 'media', 'font', 'stylesheet'].includes(type)) {
+        req.abort();
+      } else {
+        req.continue();
       }
+    });
+
+    // ---------------------------
+    // 2️⃣ Minimal browser config
+    // ---------------------------
+    await page.setViewport({ width: 1280, height: 800 });
+    await page.setGeolocation({ latitude: 0, longitude: 0 });
+
+    await page.goto(url, {
+      waitUntil: 'domcontentloaded',
+      timeout: 30_000
+    });
+
+    await delay(3000);
+    await autoScroll(page);
+
+    // ---------------------------
+    // 3️⃣ Extract event links
+    // ---------------------------
+    const eventLinks = await page.$$eval(
+      'div.dds-grid a[href*="/events/"]',
+      anchors =>
+        [...new Set(
+          anchors
+            .map(a => a.href)
+            .filter(href => href.includes('/events/'))
+        )]
     );
 
-  const eventList = [];
+    const linksToProcess = eventLinks.slice(0, MAX_EVENTS_PER_CATEGORY);
+    const eventList = [];
 
-  for (const [index, link] of eventLinks.entries()) {
-
+    // ---------------------------
+    // 4️⃣ Reuse ONE detail page
+    // ---------------------------
     const detailPage = await browser.newPage();
-    //  detailPage.on("console", msg => {
-    //       console.log(`📜 [BROWSER LOG]: ${msg.text()}`);
-    //     });
-    console.log(`"${link}"`);
-    try {
-      await detailPage.goto(link, { waitUntil: "networkidle2", timeout: 0 });
-      await delay(5000);
 
-      const data = await detailPage.evaluate(
-        async (loc, categoryTab,link) => {
-          const title = document.querySelector("h1")?.innerText || "Untitled";
-          const eventDateAndTime = document.querySelector('[data-ref="edp_event_datestring_desktop"]')?.textContent?.trim() || "Date not found";
+    await detailPage.setRequestInterception(true);
+    detailPage.on('request', req => {
+      const type = req.resourceType();
+      if (['image', 'media', 'font', 'stylesheet'].includes(type)) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
 
-          let eventDate = "TBD";
-          let eventTime = "TBD";
-          if (eventDateAndTime !== "Date not found") {
-            const parts = eventDateAndTime.split("|").map(part => part.trim());
-            if (parts.length > 0 && parts[0]) {
-              eventDate = parts[0];
+    for (const link of linksToProcess) {
+      try {
+        await detailPage.goto(link, {
+          waitUntil: 'domcontentloaded',
+          timeout: 30_000
+        });
+
+        await delay(2000);
+
+        const data = await detailPage.evaluate(
+          (loc, category, eventLink) => {
+            const title =
+              document.querySelector('h1')?.innerText || 'Untitled';
+
+            const dateString =
+              document.querySelector('[data-ref="edp_event_datestring_desktop"]')
+                ?.textContent?.trim() || '';
+
+            let eventDate = 'TBD';
+            let eventTime = 'TBD';
+
+            if (dateString.includes('|')) {
+              const [d, t] = dateString.split('|').map(s => s.trim());
+              eventDate = d || 'TBD';
+              eventTime = t || 'TBD';
             }
-            if (parts.length > 1 && parts[1]) {
-              eventTime = parts[1];
-            }
-          }
-          let image = document.querySelector('[data-ref="edp_event_banner_image"]')?.src || "";
-          let price = document.querySelector('[data-ref="edp_price_string_desktop"]')?.textContent.trim() || "Free";
 
-          let description = Array.from(document.querySelectorAll(".css-1gvk1lm p")).map(el => el.textContent.trim()).filter(text => text.length > 0);
-          
-          let additionalImages = Array.from(document.querySelectorAll('.css-13n9y95 img')).map(img => img.src).filter(src => src);
-          let tags = document.querySelector('[data-ref="edp_event_category_desktop"]')?.textContent.trim() || "";
-          tags = tags ? tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0) : [];
+            const image =
+              document.querySelector('[data-ref="edp_event_banner_image"]')
+                ?.src || '';
 
-          return {
-            title,
-            category: categoryTab,
-            eventDate,
-            eventTime,
-            image,
-            location: loc,
-            price,
-            eventLink: link,
-            description,
-            additionalImages,
-            tags
-          };
-        },
-        location,
-        categoryTab,
-        link
-      );
-      
-      // Print description for each event
-      console.log(`\n📝 Event: ${data.title}`);
-      console.log(`📄 Description: ${JSON.stringify(data.description, null, 2)}`);
-      console.log(`🏷️ Tags: ${JSON.stringify(data.tags, null, 2)}`);
-      console.log(`───────────────────────────────────────`);
-      
-      eventList.push(data);
-    } catch (e) {
-      console.error(`❌ Error scraping ${link}: ${e.message}`);
-    } finally {
-      await detailPage.close();
+            const price =
+              document.querySelector('[data-ref="edp_price_string_desktop"]')
+                ?.textContent?.trim() || 'Free';
+
+            const description = Array.from(
+              document.querySelectorAll('.css-1gvk1lm p')
+            )
+              .map(el => el.textContent.trim())
+              .filter(Boolean);
+
+            const additionalImages = Array.from(
+              document.querySelectorAll('.css-13n9y95 img')
+            )
+              .map(img => img.src)
+              .filter(Boolean);
+
+            const tags =
+              document
+                .querySelector('[data-ref="edp_event_category_desktop"]')
+                ?.textContent?.split(',')
+                .map(t => t.trim())
+                .filter(Boolean) || [];
+
+            return {
+              title,
+              category,
+              eventDate,
+              eventTime,
+              image,
+              location: loc,
+              price,
+              eventLink,
+              description,
+              additionalImages,
+              tags
+            };
+          },
+          location,
+          categoryTab,
+          link
+        );
+
+        eventList.push(data);
+      } catch (err) {
+        console.error(`❌ Failed: ${link} → ${err.message}`);
+      }
+
+      // 🧊 micro-cooldown prevents CPU spikes
+      await delay(500);
     }
-  }
 
-  await page.close();
-  console.log(`\n✅ Finished scraping ${eventList.length} events from "${categoryTab}"`);
-  return eventList;
+    await detailPage.close();
+    return eventList;
+
+  } finally {
+    await page.close();
+  }
 };
