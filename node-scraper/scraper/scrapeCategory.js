@@ -107,14 +107,8 @@ await page.waitForFunction(() => {
               document.querySelector('[data-ref="edp_event_datestring_desktop"]')
                 ?.textContent?.trim() || '';
 
-            let eventDate = 'TBD';
+            let eventDate = dateString;
             let eventTime = 'TBD';
-
-            if (dateString.includes('|')) {
-              const [d, t] = dateString.split('|').map(s => s.trim());
-              eventDate = d || 'TBD';
-              eventTime = t || 'TBD';
-            }
 
             const image =
               document.querySelector('[data-ref="edp_event_banner_image"]')
