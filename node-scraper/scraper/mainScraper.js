@@ -8,7 +8,7 @@ const pLimit = require('p-limit');
 puppeteer.use(StealthPlugin());
 
 const LOCATIONS = [
-  'indore', 'mumbai', 'new-delhi', 'bangalore', 'hyderabad',
+  'new-delhi','indore', 'bangalore', 'mumbai', 'hyderabad',
   'chennai', 'pune', 'kolkata', 'ahmedabad', 'jaipur',
   'gurgaon', 'noida', 'chandigarh'
 ];
@@ -22,7 +22,7 @@ const SUB_CATEGORY_EVENT_LIST = [
 ];
 
 const SUB_CATEGORY_ACTIVITY_LIST = [
-  'theme-parks', 'water-parks', 'adventure', 'game-zones',
+  'adventure','theme-parks', 'water-parks', 'game-zones',
   'kids-play', 'workshops', 'games-quizzes', 'art-craft',
   'fitness', 'pets', 'esports', 'museums'
 ];
@@ -33,10 +33,10 @@ const CATEGORY_SUBCATEGORIES = {
 };
 
 // Max parallel category scrapes
-const limit = pLimit(2);
+const limit = pLimit(1);
 
 // Safety cap (set null for full run)
-const MAX_EVENTS = 3;
+const MAX_EVENTS = null;
 
 module.exports = async function mainScraper(baseUrl, callbackUrl) {
   const seenLinks = new Set();

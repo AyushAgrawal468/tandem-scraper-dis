@@ -15,15 +15,15 @@ module.exports = async function scrapeCategory(
     // ---------------------------
     // 1️⃣ Block heavy resources
     // ---------------------------
-    await page.setRequestInterception(true);
-    page.on('request', req => {
-      const type = req.resourceType();
-      if (['image', 'media', 'font', 'stylesheet'].includes(type)) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
+    // await page.setRequestInterception(true);
+    // page.on('request', req => {
+    //   const type = req.resourceType();  
+    //   if (['image','media','font'].includes(type)) {
+    //     req.abort();
+    //   } else {
+    //     req.continue();
+    //   }
+    // });
 
     // ---------------------------
     // 2️⃣ Minimal browser config
@@ -31,6 +31,7 @@ module.exports = async function scrapeCategory(
     await page.setViewport({ width: 1280, height: 800 });
     await page.setGeolocation({ latitude: 0, longitude: 0 });
 
+    console.log(`\n🌍 Opening category page: ${url}`);
     await page.goto(url, {
       waitUntil: 'domcontentloaded',
       timeout: 30_000
@@ -40,8 +41,14 @@ module.exports = async function scrapeCategory(
     await autoScroll(page);
 
     // ---------------------------
-    // 3️⃣ Extract event links
+    // 3️⃣ Extract event links + posters
     // ---------------------------
+    // wait until at least one real poster appears
+await page.waitForFunction(() => {
+  const imgs = Array.from(document.querySelectorAll('div.dds-grid img'));
+  return imgs.some(img => img.src && img.src.startsWith('https://media.insider.in'));
+}, { timeout: 20000 });
+
     const eventCards = await page.$$eval(
       'div.dds-grid a[href*="/events/"]',
       anchors => {
@@ -49,19 +56,22 @@ module.exports = async function scrapeCategory(
 
         return anchors.map(a => {
           const link = a.href;
-
-          // Poster is always the first img inside the card
-          const img = a.querySelector('img')?.src || '';
-
           if (!link || seen.has(link)) return null;
           seen.add(link);
 
-          return { link, image: img };
+          const img = a.querySelector('img');
+          const image = img?.src || '';
+
+          return {
+            link,
+            image: image.startsWith('http') ? image : ''
+          };
         }).filter(Boolean);
       }
     );
 
-    const cardsToProcess = eventCards.slice(0, MAX_EVENTS_PER_CATEGORY);
+
+    const cardsToProcess = eventCards;
     const eventList = [];
 
     // ---------------------------
@@ -88,8 +98,8 @@ module.exports = async function scrapeCategory(
 
         await delay(2000);
 
-const data = await detailPage.evaluate(
-  (loc, category, eventLink, poster) => {
+        const data = await detailPage.evaluate(
+          (loc, category, eventLink, poster) => {
             const title =
               document.querySelector('h1')?.innerText || 'Untitled';
 
@@ -133,6 +143,14 @@ const data = await detailPage.evaluate(
                 .map(t => t.trim())
                 .filter(Boolean) || [];
 
+            if (loc == 'new-delhi' || loc == 'noida' || loc == 'gurgaon' || loc == 'faridabad' || loc == 'ghaziabad') {
+              loc = 'Delhi-NCR';
+            } else if (loc == 'bangalore') {
+              loc = 'Bengaluru';
+            } else if (loc == 'chennai') {
+              loc = 'Chennai';
+            }
+
             return {
               title,
               category,
@@ -155,11 +173,18 @@ const data = await detailPage.evaluate(
         );
 
         eventList.push(data);
+
+        console.log("\n🧩 EVENT");
+        console.log(` Title        : ${data.title}`);
+        console.log(` Link         : ${data.eventLink}`);
+        console.log(` Grid Poster  : ${poster || "NONE"}`);
+        console.log(` Detail Image : ${data.image || "NONE"}`);
+        console.log("────────────────────────────────────");
+
       } catch (err) {
         console.error(`❌ Failed: ${link} → ${err.message}`);
       }
 
-      // 🧊 micro-cooldown prevents CPU spikes
       await delay(500);
     }
 
