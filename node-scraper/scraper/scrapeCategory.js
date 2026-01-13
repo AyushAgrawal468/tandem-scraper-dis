@@ -42,17 +42,26 @@ module.exports = async function scrapeCategory(
     // ---------------------------
     // 3️⃣ Extract event links
     // ---------------------------
-    const eventLinks = await page.$$eval(
+    const eventCards = await page.$$eval(
       'div.dds-grid a[href*="/events/"]',
-      anchors =>
-        [...new Set(
-          anchors
-            .map(a => a.href)
-            .filter(href => href.includes('/events/'))
-        )]
+      anchors => {
+        const seen = new Set();
+
+        return anchors.map(a => {
+          const link = a.href;
+
+          // Poster is always the first img inside the card
+          const img = a.querySelector('img')?.src || '';
+
+          if (!link || seen.has(link)) return null;
+          seen.add(link);
+
+          return { link, image: img };
+        }).filter(Boolean);
+      }
     );
 
-    const linksToProcess = eventLinks.slice(0, MAX_EVENTS_PER_CATEGORY);
+    const cardsToProcess = eventCards.slice(0, MAX_EVENTS_PER_CATEGORY);
     const eventList = [];
 
     // ---------------------------
@@ -70,7 +79,7 @@ module.exports = async function scrapeCategory(
       }
     });
 
-    for (const link of linksToProcess) {
+    for (const { link, image: poster } of cardsToProcess) {
       try {
         await detailPage.goto(link, {
           waitUntil: 'domcontentloaded',
@@ -79,8 +88,8 @@ module.exports = async function scrapeCategory(
 
         await delay(2000);
 
-        const data = await detailPage.evaluate(
-          (loc, category, eventLink) => {
+const data = await detailPage.evaluate(
+  (loc, category, eventLink, poster) => {
             const title =
               document.querySelector('h1')?.innerText || 'Untitled';
 
@@ -130,6 +139,7 @@ module.exports = async function scrapeCategory(
               eventDate,
               eventTime,
               image,
+              poster,
               location: loc,
               price,
               eventLink,
@@ -140,7 +150,8 @@ module.exports = async function scrapeCategory(
           },
           location,
           categoryTab,
-          link
+          link,
+          poster
         );
 
         eventList.push(data);

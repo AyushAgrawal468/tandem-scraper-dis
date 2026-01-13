@@ -32,14 +32,15 @@ const CATEGORY_SUBCATEGORIES = {
   Activities: SUB_CATEGORY_ACTIVITY_LIST
 };
 
-// 🔒 Max parallel pages (CRITICAL for CPU control)
+// Max parallel category scrapes
 const limit = pLimit(2);
 
-// 🧪 Safety limit (remove or raise for full production)
-const MAX_EVENTS = 1000;
+// Safety cap (set null for full run)
+const MAX_EVENTS = 3;
 
 module.exports = async function mainScraper(baseUrl, callbackUrl) {
-  const allEvents = [];
+  const seenLinks = new Set();
+  let stop = false;
 
   const browser = await puppeteer.launch({
     headless: 'new',
@@ -58,12 +59,16 @@ module.exports = async function mainScraper(baseUrl, callbackUrl) {
 
   try {
     for (const location of LOCATIONS) {
+      if (stop) break;
+
       for (const categoryTab of CATEGORY_TABS) {
+        if (stop) break;
+
         const subCategories = CATEGORY_SUBCATEGORIES[categoryTab];
 
         const tasks = subCategories.map(subCategory =>
           limit(async () => {
-            if (MAX_EVENTS && allEvents.length >= MAX_EVENTS) return;
+            if (stop) return;
 
             const url = `https://www.district.in/events/${subCategory}-in-${location}-book-tickets`;
             console.log(chalk.yellow(`[INFO] Scraping: ${url}`));
@@ -76,29 +81,42 @@ module.exports = async function mainScraper(baseUrl, callbackUrl) {
                 categoryTab
               );
 
-              const remaining = MAX_EVENTS
-                ? MAX_EVENTS - allEvents.length
-                : events.length;
+              // Global dedupe by eventLink
+              const unique = events.filter(e => {
+                if (!e.eventLink) return false;
+                if (seenLinks.has(e.eventLink)) return false;
+                seenLinks.add(e.eventLink);
+                return true;
+              });
 
-              const eventsToAdd = MAX_EVENTS
-                ? events.slice(0, remaining)
-                : events;
+              if (!unique.length) return;
 
-              if (!eventsToAdd.length) return;
+              const slotsLeft = MAX_EVENTS
+                ? MAX_EVENTS - seenLinks.size + unique.length
+                : unique.length;
 
-              allEvents.push(...eventsToAdd);
+              const eventsToSend = MAX_EVENTS
+                ? unique.slice(0, slotsLeft)
+                : unique;
 
-              await axios.post(callbackUrl, eventsToAdd, {
+              if (!eventsToSend.length) return;
+
+              await axios.post(callbackUrl, eventsToSend, {
                 timeout: 10_000
               });
 
               console.log(
                 chalk.green(
-                  `[✓] ${eventsToAdd.length} ${categoryTab} events from ${location}`
+                  `[✓] ${eventsToSend.length} ${categoryTab} events from ${location}`
                 )
               );
 
-              // 🧊 Cooldown to reduce sustained CPU pressure
+              // Stop everything once limit is reached
+              if (MAX_EVENTS && seenLinks.size >= MAX_EVENTS) {
+                stop = true;
+              }
+
+              // Micro cooldown
               await new Promise(r => setTimeout(r, 800));
 
             } catch (err) {
@@ -119,6 +137,4 @@ module.exports = async function mainScraper(baseUrl, callbackUrl) {
   } finally {
     await browser.close();
   }
-
-  return allEvents;
 };
