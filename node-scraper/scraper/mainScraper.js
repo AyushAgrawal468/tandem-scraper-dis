@@ -8,7 +8,7 @@ const pLimit = require('p-limit');
 puppeteer.use(StealthPlugin());
 
 const LOCATIONS = [
-  'new-delhi','indore', 'bangalore', 'mumbai', 'hyderabad',
+  'new-delhi','indore', 'bengaluru', 'mumbai', 'hyderabad',
   'chennai', 'pune', 'kolkata', 'ahmedabad', 'jaipur',
   'gurgaon', 'noida', 'chandigarh'
 ];

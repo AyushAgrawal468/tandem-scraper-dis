@@ -49,7 +49,7 @@ public class ScrapeController {
                 try {
                     String response3000 = callScrapingService("http://localhost:3000/scrape", "{\"baseUrl\": \"https://www.district.in\",\"callbackUrl\": \"http://localhost:8081/api/scrape/callback\"}");
                     if (response3000 != null && !response3000.isEmpty()) {
-                        List<Event> events3000 = processScrapedData(response3000, mapper, "service-3000");
+                        List<Event> events3000 = processScrapedData(response3000, mapper, "DISTRICT");
                         // Save immediately when service 3000 completes
                         eventRepo.saveAll(events3000);
                         System.out.println("✅ Service 3000 completed and saved " + events3000.size() + " events");
@@ -64,7 +64,7 @@ public class ScrapeController {
                 try {
                     String response3001 = callScrapingService("http://localhost:3001/scrape", "{\"baseUrl\": \"https://in.bookmyshow.com\",\"callbackUrl\": \"http://localhost:8081/api/scrape/callback\"}");
                     if (response3001 != null && !response3001.isEmpty()) {
-                        List<Event> events3001 = processScrapedData(response3001, mapper, "service-3001");
+                        List<Event> events3001 = processScrapedData(response3001, mapper, "BOOKMYSHOW");
                         // Save immediately when service 3001 completes
                         eventRepo.saveAll(events3001);
                         System.out.println("✅ Service 3001 completed and saved " + events3001.size() + " events");
@@ -79,7 +79,7 @@ public class ScrapeController {
                 try {
                     String response3002 = callScrapingService("http://localhost:3002/scrape", "{\"baseUrl\": \"https://www.airbnb.co.in\",\"callbackUrl\": \"http://localhost:8081/api/scrape/callback\"}");
                     if (response3002 != null && !response3002.isEmpty()) {
-                        List<Event> events3002 = processScrapedData(response3002, mapper, "service-3002");
+                        List<Event> events3002 = processScrapedData(response3002, mapper, "AIRBNB");
                         // Save immediately when service 3001 completes
                         eventRepo.saveAll(events3002);
                         System.out.println("✅ Service 3002 completed and saved " + events3002.size() + " events");
